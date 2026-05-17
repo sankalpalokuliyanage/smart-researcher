@@ -14,7 +14,7 @@ def extract_title(pdf_path):
     """Extracts the research paper title using Gemini Vision/Text capabilities"""
     try:
         uploaded_gemini_file = genai.upload_file(path=pdf_path)
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        model = genai.GenerativeModel('gemini-flash-lite-latest')
         prompt = "Analyze the attached research paper and provide ONLY the title of the paper. No other text."
         response = model.generate_content([uploaded_gemini_file, prompt])
         genai.delete_file(uploaded_gemini_file.name)
@@ -50,7 +50,7 @@ def generate_summary(pdf_path, language):
         Language Constraint: {lang_instruction}
         """
 
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        model = genai.GenerativeModel('gemini-flash-lite-latest')
         response = model.generate_content([uploaded_gemini_file, prompt])
         genai.delete_file(uploaded_gemini_file.name)
         return response.text
@@ -62,7 +62,7 @@ def explain_math_deeply(pdf_path, language):
     try:
         uploaded_gemini_file = genai.upload_file(path=pdf_path)
         prompt = f"Identify all math equations in this paper and provide a step-by-step breakdown of variables and logic in {language} using LaTeX."
-        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        model = genai.GenerativeModel('gemini-flash-lite-latest')
         response = model.generate_content([uploaded_gemini_file, prompt])
         genai.delete_file(uploaded_gemini_file.name)
         return response.text
