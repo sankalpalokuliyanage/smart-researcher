@@ -80,25 +80,50 @@ def generate_citation(pdf_path, citation_style):
         return f"Error: {str(e)}"
 
 # --- Export Utilities ---
-def create_docx(title, text):
+def create_docx(title, summary, math, citation):
+    """Creates a Word document including summary, math analysis, and citation"""
     doc = Document()
     doc.add_heading(title, level=1)
-    doc.add_paragraph(text)
+    
+    doc.add_heading('Research Summary', level=2)
+    doc.add_paragraph(summary)
+    
+    if math:
+        doc.add_heading('Mathematical Breakdown', level=2)
+        doc.add_paragraph(math)
+        
+    if citation:
+        doc.add_heading('Citation', level=2)
+        doc.add_paragraph(citation)
+        
     bio = io.BytesIO()
     doc.save(bio)
     bio.seek(0)
     return bio
 
-def create_pdf(title, text):
+def create_pdf(title, summary, math, citation):
+    """Creates a PDF document including all generated content"""
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Helvetica", 'B', size=14)
+    
+    # Title
+    pdf.set_font("Helvetica", 'B', size=16)
     safe_title = title.encode('ascii', 'ignore').decode('ascii')
     pdf.multi_cell(0, 10, txt=safe_title)
     pdf.ln(5)
-    pdf.set_font("Helvetica", size=11)
-    safe_text = text.encode('ascii', 'ignore').decode('ascii')
-    pdf.multi_cell(0, 10, txt=safe_text)
+    
+    # Content sections
+    sections = [("Research Summary", summary), ("Mathematical Breakdown", math), ("Citation", citation)]
+    
+    for sec_title, content in sections:
+        if content:
+            pdf.set_font("Helvetica", 'B', size=12)
+            pdf.cell(0, 10, txt=sec_title, ln=True)
+            pdf.set_font("Helvetica", size=10)
+            safe_content = content.encode('ascii', 'ignore').decode('ascii')
+            pdf.multi_cell(0, 7, txt=safe_content)
+            pdf.ln(3)
+            
     return io.BytesIO(pdf.output())
 
 # --- Streamlit UI Layout ---
@@ -146,37 +171,45 @@ if uploaded_file is not None:
         st.markdown(st.session_state.summary_text)
         st.write("---")
         
-        # Export Tools
-        st.subheader("💾 Export Document")
-        export_format = st.radio("Select Format:", ["Word (.docx)", "PDF (.pdf)"], horizontal=True)
-        safe_name = "".join([c for c in st.session_state.paper_title if c.isalnum() or c in (' ', '_')]).strip()
-        
-        if export_format == "Word (.docx)":
-            docx_io = create_docx(st.session_state.paper_title, st.session_state.summary_text)
-            st.download_button(label="📥 Download DOCX", data=docx_io, file_name=f"{safe_name}.docx")
-        else:
-            pdf_io = create_pdf(st.session_state.paper_title, st.session_state.summary_text)
-            st.download_button(label="📥 Download PDF", data=pdf_io, file_name=f"{safe_name}.pdf")
-            
-        st.write("---")
+        # Tools in Columns
         col1, col2 = st.columns(2)
         with col1:
+            st.subheader("🧮 Mathematical Breakdown")
             if st.button("Explain Mathematics"):
                 with st.spinner("Analyzing math..."):
                     st.session_state.math_text = explain_math_deeply(temp_filename, language_opt)
         with col2:
+            st.subheader("📚 Reference & Citation")
             citation_style = st.radio("Style:", ["IEEE Format", "BibTeX (LaTeX)"])
             if st.button("Generate Citation"):
                 with st.spinner("Formatting reference..."):
                     st.session_state.citation_text = generate_citation(temp_filename, citation_style)
                     
         if st.session_state.math_text:
+            st.write("---")
             st.info("Mathematical Breakdown Output:")
             st.markdown(st.session_state.math_text)
+            
         if st.session_state.citation_text:
+            st.write("---")
             st.success("Generated Citation:")
             if "BibTeX" in citation_style: st.code(st.session_state.citation_text, language="latex")
             else: st.markdown(st.session_state.citation_text)
+
+        # --- Export Section (NOW AT THE END) ---
+        st.write("---")
+        st.subheader("💾 Export Document")
+        st.write("This will include the summary and any additional math/citation analysis generated above.")
+        export_format = st.radio("Select Format:", ["Word (.docx)", "PDF (.pdf)"], horizontal=True)
+        
+        safe_name = "".join([c for c in st.session_state.paper_title if c.isalnum() or c in (' ', '_')]).strip()
+        
+        if export_format == "Word (.docx)":
+            docx_io = create_docx(st.session_state.paper_title, st.session_state.summary_text, st.session_state.math_text, st.session_state.citation_text)
+            st.download_button(label="📥 Download Complete DOCX", data=docx_io, file_name=f"{safe_name}.docx")
+        else:
+            pdf_io = create_pdf(st.session_state.paper_title, st.session_state.summary_text, st.session_state.math_text, st.session_state.citation_text)
+            st.download_button(label="📥 Download Complete PDF", data=pdf_io, file_name=f"{safe_name}.pdf")
 
     if os.path.exists(temp_filename): os.remove(temp_filename)
 else:
