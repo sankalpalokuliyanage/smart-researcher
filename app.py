@@ -1,6 +1,9 @@
 import streamlit as st
 import google.generativeai as genai
 import os
+import io
+from docx import Document
+from fpdf import FPDF
 
 # --- Google Gemini API Configuration ---
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
@@ -111,6 +114,26 @@ def generate_citation(pdf_path, citation_style):
     except Exception as e:
         return f"Error: {str(e)}"
 
+# --- Export Utilities (DOCX & PDF හදන ශ්‍රිතයන්) ---
+def create_docx(text):
+    doc = Document()
+    doc.add_heading('Research Paper Summary Output', level=1)
+    doc.add_paragraph(text)
+    bio = io.BytesIO()
+    doc.save(bio)
+    return bio.getvalue()
+
+def create_pdf(text):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=11)
+    
+    # fpdf2 වලදී unicode නොවන characters බිඳීම වැළැක්වීමට text එක encode/decode කිරීම
+    clean_text = text.encode('latin-1', 'ignore').decode('latin-1')
+    
+    pdf.multi_cell(0, 10, txt=clean_text)
+    return pdf.output()
+
 # --- Streamlit Web Interface Configuration ---
 st.set_page_config(page_title="Research Summarizer", page_icon="🔬", layout="centered")
 
@@ -139,7 +162,6 @@ st.markdown("""
         border-top: 1px solid #e0e0e0;
         z-index: 100;
     }
-    /* Night mode support for footer */
     @media (prefers-color-scheme: dark) {
         .footer {
             background-color: rgba(17, 17, 17, 0.9);
@@ -183,7 +205,6 @@ if uploaded_file is not None:
     if st.button("Generate Summary"):
         with st.spinner("Analyzing document structure... Please wait..."):
             st.session_state.summary_text = generate_summary(temp_filename, language_opt)
-            # Clear previous outputs on new summary run
             st.session_state.math_text = None 
             st.session_state.citation_text = None
 
@@ -191,6 +212,31 @@ if uploaded_file is not None:
     if st.session_state.summary_text:
         st.write("---")
         st.markdown(st.session_state.summary_text)
+        st.write("---")
+        
+        # --- Export Document Section (Download Features) ---
+        st.subheader("💾 Export Document")
+        st.write("Download the generated summary to your local storage.")
+        
+        export_format = st.radio("Select File Format:", ["Word (.docx)", "PDF (.pdf)"], horizontal=True)
+        
+        if export_format == "Word (.docx)":
+            docx_data = create_docx(st.session_state.summary_text)
+            st.download_button(
+                label="📥 Download as DOCX",
+                data=docx_data,
+                file_name="Research_Summary.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+        else:
+            pdf_data = create_pdf(st.session_state.summary_text)
+            st.download_button(
+                label="📥 Download as PDF",
+                data=pdf_data,
+                file_name="Research_Summary.pdf",
+                mime="application/pdf"
+            )
+            
         st.write("---")
         
         # Interactive Option Sections (Two columns for features)
