@@ -3,16 +3,31 @@ import google.generativeai as genai
 import os
 import io
 import re
+import matplotlib.pyplot as plt
 from docx import Document
+from docx.shared import Inches
 from fpdf import FPDF
 
 # --- Google Gemini API Configuration ---
-# Securely fetching the API Key from Streamlit Secrets
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 genai.configure(api_key=GEMINI_API_KEY)
 
+# Function to convert LaTeX to Image (Advanced Method)
+def latex_to_image(latex_str):
+    """Converts a LaTeX string to a BytesIO image object"""
+    try:
+        fig = plt.figure(figsize=(4, 0.5))
+        plt.text(0.5, 0.5, f"${latex_str}$", size=15, ha='center', va='center')
+        plt.axis('off')
+        img_buf = io.BytesIO()
+        plt.savefig(img_buf, format='png', bbox_inches='tight', pad_inches=0.05, transparent=True)
+        img_buf.seek(0)
+        plt.close(fig)
+        return img_buf
+    except:
+        return None
+
 def extract_title(pdf_path):
-    """Identifies the research paper title using Gemini 1.5 Flash Lite"""
     try:
         uploaded_gemini_file = genai.upload_file(path=pdf_path)
         model = genai.GenerativeModel('gemini-flash-lite-latest')
@@ -20,33 +35,14 @@ def extract_title(pdf_path):
         response = model.generate_content([uploaded_gemini_file, prompt])
         genai.delete_file(uploaded_gemini_file.name)
         return response.text.strip()
-    except Exception:
+    except:
         return "Research_Summary"
 
 def generate_summary(pdf_path, language):
-    """Generates a deep, structured summary of the research paper"""
     try:
         uploaded_gemini_file = genai.upload_file(path=pdf_path)
-        
-        if language == "සිංහල (Sinhala)":
-            lang_instr = "Write a comprehensive academic summary in Sinhala. Explain formulas in LaTeX."
-        elif language == "한국어 (Korean)":
-            lang_instr = "Write a professional academic summary in Korean (formal style). Explain formulas in LaTeX."
-        else:
-            lang_instr = "Write a comprehensive academic summary in English."
-
-        prompt = f"""
-        You are an expert research professor. Analyze this PDF and provide a deep summary:
-        1. Research Objectives: The core problem and why it matters.
-        2. Methodology: Detailed explanation of the approach/algorithms.
-        3. Mathematical Foundations: List and explain key equations using LaTeX ($...$ or $$...$$).
-        4. Findings: Major results and data outcomes.
-        5. Conclusion: Takeaways and future research directions.
-        
-        Language: {lang_instr}
-        """
-
         model = genai.GenerativeModel('gemini-flash-lite-latest')
+        prompt = f"Analyze this PDF and provide a deep academic summary in {language}. Use LaTeX for all equations."
         response = model.generate_content([uploaded_gemini_file, prompt])
         genai.delete_file(uploaded_gemini_file.name)
         return response.text
@@ -54,11 +50,10 @@ def generate_summary(pdf_path, language):
         return f"Error: {str(e)}"
 
 def explain_math_deeply(pdf_path, language):
-    """Provides a detailed breakdown of all math found in the paper"""
     try:
         uploaded_gemini_file = genai.upload_file(path=pdf_path)
-        prompt = f"Break down every mathematical equation in this paper step-by-step. Explain variables and logic in {language} using LaTeX."
         model = genai.GenerativeModel('gemini-flash-lite-latest')
+        prompt = f"Break down every mathematical equation in this paper step-by-step in {language} using LaTeX."
         response = model.generate_content([uploaded_gemini_file, prompt])
         genai.delete_file(uploaded_gemini_file.name)
         return response.text
@@ -66,84 +61,56 @@ def explain_math_deeply(pdf_path, language):
         return f"Error: {str(e)}"
 
 def generate_citation(pdf_path, citation_style):
-    """Generates citation based on IEEE or BibTeX format"""
     try:
         uploaded_gemini_file = genai.upload_file(path=pdf_path)
         style = "IEEE format" if citation_style == "IEEE Format" else "BibTeX entry"
-        prompt = f"Extract metadata and generate a {style} citation for this paper."
         model = genai.GenerativeModel('gemini-flash-lite-latest')
+        prompt = f"Generate a {style} citation for this paper."
         response = model.generate_content([uploaded_gemini_file, prompt])
         genai.delete_file(uploaded_gemini_file.name)
         return response.text
     except Exception as e:
         return f"Error: {str(e)}"
 
-# --- Export Utilities (Cleaning LaTeX for proper document rendering) ---
-def clean_latex_for_export(text):
-    """Converts LaTeX formatting into readable plain text for Word/PDF"""
-    if not text:
-        return ""
-    # Removing LaTeX math delimiters
-    text = text.replace("$$", "").replace("$", "")
-    # Replacing common LaTeX symbols with plain text equivalents
-    replacements = {
-        "\\alpha": "alpha", "\\beta": "beta", "\\gamma": "gamma", "\\delta": "delta",
-        "\\theta": "theta", "\\lambda": "lambda", "\\pi": "pi", "\\sigma": "sigma",
-        "\\omega": "omega", "\\sum": "Sum", "\\int": "Integral", "\\sqrt": "sqrt",
-        "\\approx": "≈", "\\neq": "≠", "\\le": "≤", "\\ge": "≥", "\\times": "×",
-        "\\rightarrow": "->", "\\infty": "infinity"
-    }
-    for old, new in replacements.items():
-        text = text.replace(old, new)
-    # Removing any remaining backslashes and curly braces
-    text = re.sub(r'\\|\{|\}', '', text)
-    return text
-
+# --- Export Utilities (Updated with Image Support) ---
 def create_docx(title, summary, math, citation):
-    """Creates a Word document including all generated content"""
     doc = Document()
-    doc.add_heading(clean_latex_for_export(title), level=1)
+    doc.add_heading(title, level=1)
     
-    doc.add_heading('Research Summary', level=2)
-    doc.add_paragraph(clean_latex_for_export(summary))
+    sections = [("Research Summary", summary), ("Mathematical Breakdown", math), ("Citation", citation)]
     
-    if math:
-        doc.add_heading('Mathematical Breakdown', level=2)
-        doc.add_paragraph(clean_latex_for_export(math))
-        
-    if citation:
-        doc.add_heading('Citation', level=2)
-        doc.add_paragraph(clean_latex_for_export(citation))
-        
+    for sec_title, content in sections:
+        if content:
+            doc.add_heading(sec_title, level=2)
+            # Find LaTeX formulas $...$ or $$...$$
+            parts = re.split(r'(\$\$.*?\$\$|\$.*?\$)', content, flags=re.DOTALL)
+            p = doc.add_paragraph()
+            for part in parts:
+                if part.startswith('$'):
+                    latex = part.replace('$', '')
+                    img = latex_to_image(latex)
+                    if img:
+                        p.add_run().add_picture(img, width=Inches(1.5))
+                else:
+                    p.add_run(part)
+    
     bio = io.BytesIO()
     doc.save(bio)
     bio.seek(0)
     return bio
 
 def create_pdf(title, summary, math, citation):
-    """Creates a PDF document including all generated content"""
     pdf = FPDF()
     pdf.add_page()
-    
-    # Title
     pdf.set_font("Helvetica", 'B', size=16)
-    safe_title = clean_latex_for_export(title).encode('ascii', 'ignore').decode('ascii')
-    pdf.multi_cell(0, 10, txt=safe_title)
-    pdf.ln(5)
+    pdf.multi_cell(0, 10, txt=title.encode('ascii', 'ignore').decode('ascii'))
     
-    # Sections mapping
-    sections = [("Research Summary", summary), ("Mathematical Breakdown", math), ("Citation", citation)]
+    content_combined = f"Summary:\n{summary}\n\nMath:\n{math}\n\nCitation:\n{citation}"
+    pdf.set_font("Helvetica", size=10)
+    # Simple clean text for PDF as FPDF doesn't support inline images easily
+    clean_text = content_combined.replace('$', '').encode('ascii', 'ignore').decode('ascii')
+    pdf.multi_cell(0, 7, txt=clean_text)
     
-    for sec_title, content in sections:
-        if content:
-            pdf.set_font("Helvetica", 'B', size=12)
-            pdf.cell(0, 10, txt=sec_title, ln=True)
-            pdf.set_font("Helvetica", size=10)
-            cleaned_content = clean_latex_for_export(content)
-            safe_content = cleaned_content.encode('ascii', 'ignore').decode('ascii')
-            pdf.multi_cell(0, 7, txt=safe_content)
-            pdf.ln(3)
-            
     return io.BytesIO(pdf.output())
 
 # --- Streamlit UI Layout ---
@@ -153,7 +120,6 @@ st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 8px; font-weight: 600; }
     .footer { position: fixed; left: 0; bottom: 0; width: 100%; background-color: rgba(250, 250, 250, 0.9); color: #555555; text-align: center; padding: 10px; border-top: 1px solid #e0e0e0; z-index: 100; font-size: 14px; }
-    @media (prefers-color-scheme: dark) { .footer { background-color: rgba(17, 17, 17, 0.9); color: #bbbbbb; border-top: 1px solid #333333; } }
     </style>
 """, unsafe_allow_html=True)
 
@@ -161,14 +127,10 @@ st.title("🔬 Smart Research Paper Summarizer")
 st.write("Professional academic analysis powered by Gemini 1.5 Flash Lite.")
 st.write("---")
 
-# User Inputs
-st.subheader("Configuration & Upload")
 language_opt = st.selectbox("Select Output Language:", ["English", "සිංහල (Sinhala)", "한국어 (Korean)"])
 uploaded_file = st.file_uploader("Upload Research Paper (PDF):", type="pdf")
 
 if uploaded_file is not None:
-    st.success("File uploaded successfully!")
-    
     if "paper_title" not in st.session_state: st.session_state.paper_title = None
     if "summary_text" not in st.session_state: st.session_state.summary_text = None
     if "math_text" not in st.session_state: st.session_state.math_text = None
@@ -179,64 +141,42 @@ if uploaded_file is not None:
         f.write(uploaded_file.getbuffer())
         
     if st.button("Generate Summary"):
-        with st.spinner("Summarizing paper... This may take a few seconds."):
+        with st.spinner("Summarizing..."):
             st.session_state.paper_title = extract_title(temp_filename)
             st.session_state.summary_text = generate_summary(temp_filename, language_opt)
-            st.session_state.math_text = None 
-            st.session_state.citation_text = None
-
+    
     if st.session_state.summary_text:
         st.write("---")
         st.markdown(f"### 📄 {st.session_state.paper_title}")
         st.markdown(st.session_state.summary_text)
-        st.write("---")
         
-        # Tools in Columns
         col1, col2 = st.columns(2)
         with col1:
-            st.subheader("🧮 Mathematical Breakdown")
             if st.button("Explain Mathematics"):
                 with st.spinner("Analyzing math..."):
                     st.session_state.math_text = explain_math_deeply(temp_filename, language_opt)
         with col2:
-            st.subheader("📚 Reference & Citation")
             citation_style = st.radio("Style:", ["IEEE Format", "BibTeX (LaTeX)"])
             if st.button("Generate Citation"):
-                with st.spinner("Formatting reference..."):
+                with st.spinner("Generating citation..."):
                     st.session_state.citation_text = generate_citation(temp_filename, citation_style)
                     
-        if st.session_state.math_text:
-            st.write("---")
-            st.info("Mathematical Breakdown Output:")
-            st.markdown(st.session_state.math_text)
-            
-        if st.session_state.citation_text:
-            st.write("---")
-            st.success("Generated Citation:")
-            if "BibTeX" in citation_style: st.code(st.session_state.citation_text, language="latex")
-            else: st.markdown(st.session_state.citation_text)
+        if st.session_state.math_text: st.info(st.session_state.math_text)
+        if st.session_state.citation_text: st.success(st.session_state.citation_text)
 
-        # --- Export Section (At the end, containing all generated data) ---
         st.write("---")
         st.subheader("💾 Export Document")
-        st.info("This file will include the summary and any generated math/citation analysis in a clean, readable format.")
         export_format = st.radio("Select Format:", ["Word (.docx)", "PDF (.pdf)"], horizontal=True)
         
         safe_name = "".join([c for c in st.session_state.paper_title if c.isalnum() or c in (' ', '_')]).strip()
         
         if export_format == "Word (.docx)":
             docx_io = create_docx(st.session_state.paper_title, st.session_state.summary_text, st.session_state.math_text, st.session_state.citation_text)
-            st.download_button(label="📥 Download Complete DOCX", data=docx_io, file_name=f"{safe_name}.docx")
+            st.download_button(label="📥 Download DOCX (with Real Equations)", data=docx_io, file_name=f"{safe_name}.docx")
         else:
             pdf_io = create_pdf(st.session_state.paper_title, st.session_state.summary_text, st.session_state.math_text, st.session_state.citation_text)
-            st.download_button(label="📥 Download Complete PDF", data=pdf_io, file_name=f"{safe_name}.pdf")
+            st.download_button(label="📥 Download PDF", data=pdf_io, file_name=f"{safe_name}.pdf")
 
     if os.path.exists(temp_filename): os.remove(temp_filename)
-else:
-    st.info("Please upload a PDF file to begin.")
 
-# Professional Footer
-st.markdown(
-    f"""<div class="footer"><p>Developed by <b>Sankalpa Lokuliyanage</b> | Kyungpook National University</p></div>""",
-    unsafe_allow_html=True
-)
+st.markdown(f"""<div class="footer"><p>Developed by <b>Sankalpa Lokuliyanage</b> | Kyungpook National University</p></div>""", unsafe_allow_html=True)
