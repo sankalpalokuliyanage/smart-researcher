@@ -23,46 +23,29 @@ def extract_title(pdf_path):
         return "Research_Summary"
 
 def generate_summary(pdf_path, language):
-    """Generates a highly detailed and structured academic summary"""
+    """Generates a structured academic summary based on the selected language"""
     try:
         uploaded_gemini_file = genai.upload_file(path=pdf_path)
         
         # Language instructions for the AI
         if language == "සිංහල (Sinhala)":
-            lang_instruction = "Write a comprehensive and professional academic summary in Sinhala. Ensure technical terms are well-explained."
+            lang_instruction = "Write the summary clearly in academic Sinhala. Keep mathematical formulas in standard LaTeX notation."
         elif language == "한국어 (Korean)":
-            lang_instruction = "Write a comprehensive and professional academic summary in Korean (using academic/formal style)."
+            lang_instruction = "Write the summary professionally in academic Korean (합니다/습니다 style). Keep mathematical formulas in standard LaTeX notation."
         else:
-            lang_instruction = "Write a comprehensive and professional academic summary in English."
+            lang_instruction = "Write the summary clearly in academic English."
 
-        # Enhanced Prompt for Better Explanation
         prompt = f"""
-        You are an elite academic research professor. Analyze the attached research paper PDF thoroughly and provide a deep, well-structured summary.
+        You are an expert academic research assistant. Analyze the attached research paper PDF.
+        Provide a concise yet informative summary under the following clear sections:
         
-        Please cover the following in great detail:
+        # 📄 Research Paper Summary
         
-        # 📄 Comprehensive Research Analysis
+        ### 🎯 1. Main Objectives & Contributions
+        ### ⚙️ 2. Methodology Overview
+        ### 🧮 3. Key Mathematical Equations Found (Use LaTeX $...$ or $$...$$)
+        ### 📊 4. Key Findings & Conclusion
         
-        ### 🎯 1. Research Motivation & Core Objectives
-        - What is the specific problem the authors are trying to solve?
-        - Why is this research significant in the current field?
-        
-        ### ⚙️ 2. Detailed Methodology & Proposed Approach
-        - Explain the framework, algorithms, or experimental setup used.
-        - How does the proposed solution differ from existing work?
-        
-        ### 🧮 3. Critical Mathematical Foundations
-        - Identify and explain the most important mathematical formulations or logic found in the paper.
-        - (Use LaTeX $...$ for inline or $$...$$ for block equations).
-        
-        ### 📊 4. Key Results, Findings & Evaluation
-        - What were the major outcomes? 
-        - Summarize the performance metrics or data results presented.
-        
-        ### 💡 5. Conclusion & Future Implications
-        - What are the final takeaways? 
-        - What future research directions do the authors suggest?
-
         ---
         Language Constraint: {lang_instruction}
         """
@@ -78,7 +61,7 @@ def explain_math_deeply(pdf_path, language):
     """Provides a detailed step-by-step breakdown of mathematical formulas"""
     try:
         uploaded_gemini_file = genai.upload_file(path=pdf_path)
-        prompt = f"Identify all math equations in this paper and provide a step-by-step breakdown of variables, derivations, and logic in {language} using LaTeX."
+        prompt = f"Identify all math equations in this paper and provide a step-by-step breakdown of variables and logic in {language} using LaTeX."
         model = genai.GenerativeModel('gemini-3-flash-preview')
         response = model.generate_content([uploaded_gemini_file, prompt])
         genai.delete_file(uploaded_gemini_file.name)
@@ -111,10 +94,11 @@ def create_docx(title, text):
     return bio
 
 def create_pdf(title, text):
-    """Creates a downloadable PDF document stream"""
+    """Creates a downloadable PDF document stream (using ASCII for compatibility)"""
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", 'B', size=14)
+    # Cleaning text to avoid FPDF Unicode errors
     safe_title = title.encode('ascii', 'ignore').decode('ascii')
     pdf.multi_cell(0, 10, txt=safe_title)
     pdf.ln(5)
@@ -126,6 +110,7 @@ def create_pdf(title, text):
 # --- Streamlit UI Configuration ---
 st.set_page_config(page_title="Research Summarizer", page_icon="🔬", layout="centered")
 
+# Injecting Custom CSS for a better UI and fixed footer
 st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 8px; font-weight: 600; }
@@ -138,6 +123,7 @@ st.title("🔬 Smart Research Paper Summarizer")
 st.write("Upload a research paper to get a clean summary, extract mathematical formulations, and generate citations instantly.")
 st.write("---")
 
+# Main Input Section
 st.subheader("Configuration & File Upload")
 language_opt = st.selectbox("Select Output Language:", ["English", "සිංහල (Sinhala)", "한국어 (Korean)"])
 uploaded_file = st.file_uploader("Upload Research Paper (PDF):", type="pdf")
@@ -145,31 +131,37 @@ uploaded_file = st.file_uploader("Upload Research Paper (PDF):", type="pdf")
 if uploaded_file is not None:
     st.success("File uploaded successfully!")
     
+    # Persistent session state to keep data during re-runs
     if "paper_title" not in st.session_state: st.session_state.paper_title = None
     if "summary_text" not in st.session_state: st.session_state.summary_text = None
     if "math_text" not in st.session_state: st.session_state.math_text = None
     if "citation_text" not in st.session_state: st.session_state.citation_text = None
         
+    # Save the uploaded file temporarily to local disk for Gemini processing
     temp_filename = "temp_summarizer_paper.pdf"
     with open(temp_filename, "wb") as f:
         f.write(uploaded_file.getbuffer())
         
     if st.button("Generate Summary"):
-        with st.spinner("Extracting title and generating a deep summary..."):
+        with st.spinner("Extracting title and generating summary..."):
             st.session_state.paper_title = extract_title(temp_filename)
             st.session_state.summary_text = generate_summary(temp_filename, language_opt)
+            # Reset other results on new summary run
             st.session_state.math_text = None 
             st.session_state.citation_text = None
 
     if st.session_state.summary_text:
         st.write("---")
+        # Displaying identified title as the main header
         st.markdown(f"### 📄 {st.session_state.paper_title}")
         st.markdown(st.session_state.summary_text)
         st.write("---")
         
+        # --- Export Section ---
         st.subheader("💾 Export Document")
         export_format = st.radio("Select File Format:", ["Word (.docx)", "PDF (.pdf)"], horizontal=True)
         
+        # Sanitizing filename for the OS
         safe_filename = "".join([c for c in st.session_state.paper_title if c.isalnum() or c in (' ', '_')]).rstrip()
         
         if export_format == "Word (.docx)":
@@ -181,11 +173,12 @@ if uploaded_file is not None:
             
         st.write("---")
         
+        # Additional Tools in Columns
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("🧮 Mathematical Breakdown")
             if st.button("Explain Mathematics"):
-                with st.spinner("Analyzing equations in depth..."):
+                with st.spinner("Analyzing equations..."):
                     st.session_state.math_text = explain_math_deeply(temp_filename, language_opt)
                     
         with col2:
@@ -195,6 +188,7 @@ if uploaded_file is not None:
                 with st.spinner("Generating citation..."):
                     st.session_state.citation_text = generate_citation(temp_filename, citation_style)
                     
+        # Conditional Display of Results
         if st.session_state.math_text:
             st.info("Mathematical Breakdown Output:")
             st.markdown(st.session_state.math_text)
@@ -204,10 +198,12 @@ if uploaded_file is not None:
             if "BibTeX" in citation_style: st.code(st.session_state.citation_text, language="latex")
             else: st.markdown(st.session_state.citation_text)
 
+    # Cleanup temp file
     if os.path.exists(temp_filename): os.remove(temp_filename)
 else:
     st.info("Please upload a PDF file to begin the analysis.")
 
+# --- Professional Footer ---
 st.markdown(
     f"""<div class="footer"><p>Developed by <b>Sankalpa Lokuliyanage</b> | Kyungpook National University</p></div>""",
     unsafe_allow_html=True
