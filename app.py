@@ -12,10 +12,10 @@ GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 genai.configure(api_key=GEMINI_API_KEY)
 
 def extract_title(pdf_path):
-    """Identifies the research paper title using Gemini 1.5 Flash"""
+    """Identifies the research paper title using Gemini 1.5 Flash Lite"""
     try:
         uploaded_gemini_file = genai.upload_file(path=pdf_path)
-        model = genai.GenerativeModel('gemini-1.5-flash-lite-latest')
+        model = genai.GenerativeModel('gemini-flash-lite-latest')
         prompt = "Provide ONLY the exact title of this research paper. No extra text or formatting."
         response = model.generate_content([uploaded_gemini_file, prompt])
         genai.delete_file(uploaded_gemini_file.name)
@@ -46,7 +46,7 @@ def generate_summary(pdf_path, language):
         Language: {lang_instr}
         """
 
-        model = genai.GenerativeModel('gemini-1.5-flash-lite-latest')
+        model = genai.GenerativeModel('gemini-flash-lite-latest')
         response = model.generate_content([uploaded_gemini_file, prompt])
         genai.delete_file(uploaded_gemini_file.name)
         return response.text
@@ -58,7 +58,7 @@ def explain_math_deeply(pdf_path, language):
     try:
         uploaded_gemini_file = genai.upload_file(path=pdf_path)
         prompt = f"Break down every mathematical equation in this paper step-by-step. Explain variables and logic in {language} using LaTeX."
-        model = genai.GenerativeModel('gemini-1.5-flash-lite-latest')
+        model = genai.GenerativeModel('gemini-flash-lite-latest')
         response = model.generate_content([uploaded_gemini_file, prompt])
         genai.delete_file(uploaded_gemini_file.name)
         return response.text
@@ -71,26 +71,36 @@ def generate_citation(pdf_path, citation_style):
         uploaded_gemini_file = genai.upload_file(path=pdf_path)
         style = "IEEE format" if citation_style == "IEEE Format" else "BibTeX entry"
         prompt = f"Extract metadata and generate a {style} citation for this paper."
-        model = genai.GenerativeModel('gemini-1.5-flash-lite-latest')
+        model = genai.GenerativeModel('gemini-flash-lite-latest')
         response = model.generate_content([uploaded_gemini_file, prompt])
         genai.delete_file(uploaded_gemini_file.name)
         return response.text
     except Exception as e:
         return f"Error: {str(e)}"
 
-# --- Export Utilities ---
+# --- Export Utilities (Cleaning LaTeX for proper document rendering) ---
 def clean_latex_for_export(text):
-    """Removes LaTeX symbols ($) and cleans the text for Word/PDF compatibility"""
+    """Converts LaTeX formatting into readable plain text for Word/PDF"""
     if not text:
         return ""
-    # Removing double and single dollar signs for clean text output
-    cleaned = text.replace("$$", "").replace("$", "")
-    # Replacing some common LaTeX symbols with readable text equivalents
-    cleaned = cleaned.replace("\\rightarrow", "->").replace("\\alpha", "alpha").replace("\\beta", "beta")
-    return cleaned
+    # Removing LaTeX math delimiters
+    text = text.replace("$$", "").replace("$", "")
+    # Replacing common LaTeX symbols with plain text equivalents
+    replacements = {
+        "\\alpha": "alpha", "\\beta": "beta", "\\gamma": "gamma", "\\delta": "delta",
+        "\\theta": "theta", "\\lambda": "lambda", "\\pi": "pi", "\\sigma": "sigma",
+        "\\omega": "omega", "\\sum": "Sum", "\\int": "Integral", "\\sqrt": "sqrt",
+        "\\approx": "≈", "\\neq": "≠", "\\le": "≤", "\\ge": "≥", "\\times": "×",
+        "\\rightarrow": "->", "\\infty": "infinity"
+    }
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    # Removing any remaining backslashes and curly braces
+    text = re.sub(r'\\|\{|\}', '', text)
+    return text
 
 def create_docx(title, summary, math, citation):
-    """Creates a Word document stream with cleaned text"""
+    """Creates a Word document including all generated content"""
     doc = Document()
     doc.add_heading(clean_latex_for_export(title), level=1)
     
@@ -111,17 +121,17 @@ def create_docx(title, summary, math, citation):
     return bio
 
 def create_pdf(title, summary, math, citation):
-    """Creates a PDF document stream with cleaned text"""
+    """Creates a PDF document including all generated content"""
     pdf = FPDF()
     pdf.add_page()
     
-    # PDF Header Configuration
+    # Title
     pdf.set_font("Helvetica", 'B', size=16)
     safe_title = clean_latex_for_export(title).encode('ascii', 'ignore').decode('ascii')
     pdf.multi_cell(0, 10, txt=safe_title)
     pdf.ln(5)
     
-    # Content sections mapping
+    # Sections mapping
     sections = [("Research Summary", summary), ("Mathematical Breakdown", math), ("Citation", citation)]
     
     for sec_title, content in sections:
@@ -129,7 +139,6 @@ def create_pdf(title, summary, math, citation):
             pdf.set_font("Helvetica", 'B', size=12)
             pdf.cell(0, 10, txt=sec_title, ln=True)
             pdf.set_font("Helvetica", size=10)
-            # Clean LaTeX before encoding
             cleaned_content = clean_latex_for_export(content)
             safe_content = cleaned_content.encode('ascii', 'ignore').decode('ascii')
             pdf.multi_cell(0, 7, txt=safe_content)
@@ -149,7 +158,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.title("🔬 Smart Research Paper Summarizer")
-st.write("Professional academic analysis powered by Gemini 1.5 Flash.")
+st.write("Professional academic analysis powered by Gemini 1.5 Flash Lite.")
 st.write("---")
 
 # User Inputs
@@ -160,7 +169,6 @@ uploaded_file = st.file_uploader("Upload Research Paper (PDF):", type="pdf")
 if uploaded_file is not None:
     st.success("File uploaded successfully!")
     
-    # Initialize session states
     if "paper_title" not in st.session_state: st.session_state.paper_title = None
     if "summary_text" not in st.session_state: st.session_state.summary_text = None
     if "math_text" not in st.session_state: st.session_state.math_text = None
@@ -179,12 +187,11 @@ if uploaded_file is not None:
 
     if st.session_state.summary_text:
         st.write("---")
-        # UI still shows LaTeX for beautiful rendering
         st.markdown(f"### 📄 {st.session_state.paper_title}")
         st.markdown(st.session_state.summary_text)
         st.write("---")
         
-        # Additional Tool Columns
+        # Tools in Columns
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("🧮 Mathematical Breakdown")
@@ -198,7 +205,6 @@ if uploaded_file is not None:
                 with st.spinner("Formatting reference..."):
                     st.session_state.citation_text = generate_citation(temp_filename, citation_style)
                     
-        # Output sections
         if st.session_state.math_text:
             st.write("---")
             st.info("Mathematical Breakdown Output:")
@@ -210,13 +216,12 @@ if uploaded_file is not None:
             if "BibTeX" in citation_style: st.code(st.session_state.citation_text, language="latex")
             else: st.markdown(st.session_state.citation_text)
 
-        # --- Integrated Export Section ---
+        # --- Export Section (At the end, containing all generated data) ---
         st.write("---")
         st.subheader("💾 Export Document")
-        st.info("The exported file will include the summary and any generated math/citation analysis.")
+        st.info("This file will include the summary and any generated math/citation analysis in a clean, readable format.")
         export_format = st.radio("Select Format:", ["Word (.docx)", "PDF (.pdf)"], horizontal=True)
         
-        # File name sanitization
         safe_name = "".join([c for c in st.session_state.paper_title if c.isalnum() or c in (' ', '_')]).strip()
         
         if export_format == "Word (.docx)":
@@ -230,7 +235,7 @@ if uploaded_file is not None:
 else:
     st.info("Please upload a PDF file to begin.")
 
-# Professional Footer (Static Positioning)
+# Professional Footer
 st.markdown(
     f"""<div class="footer"><p>Developed by <b>Sankalpa Lokuliyanage</b> | Kyungpook National University</p></div>""",
     unsafe_allow_html=True
