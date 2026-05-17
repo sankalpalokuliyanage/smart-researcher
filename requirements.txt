@@ -4,4 +4,3 @@ pymupdf
 Pillow
 python-docx
 fpdf2
-re
